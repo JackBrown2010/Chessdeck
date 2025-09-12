@@ -1,0 +1,277 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Chess Deck-Building Battle with Souls</title>
+<style>
+  body { display: flex; flex-direction: column; align-items: center; font-family: sans-serif; }
+  table { border-collapse: collapse; margin: 20px 0; }
+  td { width: 60px; height: 60px; text-align: center; vertical-align: top; border: 1px solid black; font-weight: bold; font-size: 16px; cursor: pointer; position: relative; }
+  .player { background-color: lightblue; }
+  .enemy { background-color: lightcoral; }
+  .hp-bar { position: absolute; bottom: 2px; left: 2px; height: 6px; border: 1px solid black; width: 56px; background-color: gray; }
+  .hp-fill { height: 100%; background-color: green; }
+  #deck, #souls { margin-top: 10px; }
+  button { margin: 5px; }
+</style>
+</head>
+<body>
+
+<h1>Chess Deck-Building Battle with Souls</h1>
+<table id="board"></table>
+
+<div id="deck">
+  <h3>Your Deck:</h3>
+  <div id="cards"></div>
+</div>
+
+<div id="souls">Souls: 0</div>
+<div id="status"></div>
+
+<script>
+const rows = 8, cols = 8;
+const board = [];
+let playerDeck = [
+  {name:'Pawn', hp:2, atk:1, cost:1},
+  {name:'Knight', hp:3, atk:2, cost:3},
+  {name:'Bishop', hp:2, atk:2, cost:3},
+  {name:'Rook', hp:4, atk:3, cost:5},
+  {name:'Queen', hp:5, atk:3, cost:7}
+];
+let playerHand = [];
+let selectedPiece = null;
+let turn = 'player';
+let souls = 0;
+
+const pieceSymbols = {
+  'Pawn': 'P',
+  'Knight': 'N',
+  'Bishop': 'B',
+  'Rook': 'R',
+  'Queen': 'Q',
+  'King': 'K'
+};
+
+function getMoves(piece, r, c) {
+  const moves = [];
+  if(piece.name==='Pawn'){
+    const dir = piece.type==='player'? -1 : 1;
+    if(board[r+dir]?.[c]===null) moves.push([r+dir,c]);
+    if(board[r+dir]?.[c-1]?.type!==piece.type && board[r+dir]?.[c-1]) moves.push([r+dir,c-1]);
+    if(board[r+dir]?.[c+1]?.type!==piece.type && board[r+dir]?.[c+1]) moves.push([r+dir,c+1]);
+  }
+  if(piece.name==='Knight'){
+    const deltas = [[-2,-1],[-2,1],[-1,-2],[-1,2],[1,-2],[1,2],[2,-1],[2,1]];
+    deltas.forEach(([dr,dc])=>{
+      const nr=r+dr,nc=c+dc;
+      if(board[nr]?.[nc]?.type!==piece.type && nr>=0 && nr<8 && nc>=0 && nc<8) moves.push([nr,nc]);
+    });
+  }
+  if(piece.name==='Bishop' || piece.name==='Queen'){
+    [[1,1],[1,-1],[-1,1],[-1,-1]].forEach(([dr,dc])=>{
+      let nr=r+dr,nc=c+dc;
+      while(nr>=0 && nr<8 && nc>=0 && nc<8){
+        if(board[nr][nc]===null) moves.push([nr,nc]);
+        else { if(board[nr][nc].type!==piece.type) moves.push([nr,nc]); break; }
+        nr+=dr; nc+=dc;
+      }
+    });
+  }
+  if(piece.name==='Rook' || piece.name==='Queen'){
+    [[1,0],[-1,0],[0,1],[0,-1]].forEach(([dr,dc])=>{
+      let nr=r+dr,nc=c+dc;
+      while(nr>=0 && nr<8 && nc>=0 && nc<8){
+        if(board[nr][nc]===null) moves.push([nr,nc]);
+        else { if(board[nr][nc].type!==piece.type) moves.push([nr,nc]); break; }
+        nr+=dr; nc+=dc;
+      }
+    });
+  }
+  if(piece.name==='King'){
+    [[1,0],[-1,0],[0,1],[0,-1],[1,1],[1,-1],[-1,1],[-1,-1]].forEach(([dr,dc])=>{
+      const nr=r+dr,nc=c+dc;
+      if(board[nr]?.[nc]?.type!==piece.type && nr>=0 && nr<8 && nc>=0 && nc<8) moves.push([nr,nc]);
+    });
+  }
+  return moves;
+}
+
+function createBoard() {
+  const table = document.getElementById('board');
+  for (let r = 0; r < rows; r++) {
+    const row = [];
+    const tr = document.createElement('tr');
+    for (let c = 0; c < cols; c++) {
+      const td = document.createElement('td');
+      td.dataset.row = r;
+      td.dataset.col = c;
+      td.addEventListener('click', () => cellClick(r, c));
+      tr.appendChild(td);
+      row.push(null);
+    }
+    table.appendChild(tr);
+    board.push(row);
+  }
+  setupEnemy();
+  drawBoard();
+  drawDeck();
+  drawHand();
+  updateStatus();
+  updateSouls();
+}
+
+function setupEnemy() {
+  const layout = [
+    ['Rook','Knight','Bishop','Queen','King','Bishop','Knight','Rook'],
+    ['Pawn','Pawn','Pawn','Pawn','Pawn','Pawn','Pawn','Pawn']
+  ];
+  for(let r=0;r<2;r++){
+    for(let c=0;c<8;c++){
+      const name = layout[r][c];
+      board[r][c] = {name,name:name, hp:name==='Pawn'?2:name==='Knight'?3:name==='Bishop'?2:name==='Rook'?4:name==='Queen'?5:6, atk:name==='Pawn'?1:name==='Knight'?2:name==='Bishop'?2:name==='Rook'?3:name==='Queen'?3:1, type:'enemy', maxHp:name==='Pawn'?2:name==='Knight'?3:name==='Bishop'?2:name==='Rook'?4:name==='Queen'?5:6};
+    }
+  }
+}
+
+function drawBoard() {
+  for(let r=0;r<rows;r++){
+    for(let c=0;c<cols;c++){
+      const td = document.querySelector(`td[data-row='${r}'][data-col='${c}']`);
+      const piece = board[r][c];
+      td.innerHTML = piece ? pieceSymbols[piece.name] + '<div class="hp-bar"><div class="hp-fill" style="width:'+Math.max(0,(piece.hp/piece.maxHp)*100)+'%"></div></div>' : '';
+      td.className = piece ? piece.type : '';
+      td.style.backgroundColor = '';
+      if(selectedPiece && selectedPiece.piece.moves?.some(m=>m[0]===r && m[1]===c)){
+        td.style.backgroundColor = 'yellow';
+      }
+    }
+  }
+}
+
+function drawDeck() {
+  const div = document.getElementById('cards');
+  div.innerHTML = '';
+  playerHand.forEach((card, index)=>{
+    const btn = document.createElement('button');
+    btn.textContent = card.name+" HP:"+card.hp+" ATK:"+card.atk+" Cost:"+card.cost;
+    btn.onclick = ()=>selectCard(index);
+    div.appendChild(btn);
+  });
+}
+
+function drawHand() {
+  while(playerHand.length<3 && playerDeck.length>0){
+    playerHand.push({...playerDeck[Math.floor(Math.random()*playerDeck.length)]});
+  }
+  drawDeck();
+}
+
+function selectCard(index){
+  if(turn!=='player'){ alert("Not your turn!"); return; }
+  const card = playerHand[index];
+  if(card.cost > souls){ alert("Not enough souls!"); return; }
+  selectedPiece = {cardIndex:index, piece:card};
+  alert("Click an empty square on your side to place the piece.");
+}
+
+function cellClick(r,c){
+  if(turn!=='player') return;
+  const piece = board[r][c];
+  if(selectedPiece){
+    if(!piece && r>=4){
+      board[r][c] = {...selectedPiece.piece, type:'player', maxHp:selectedPiece.piece.hp};
+      souls -= selectedPiece.piece.cost;
+      updateSouls();
+      playerHand.splice(selectedPiece.cardIndex,1);
+      selectedPiece = null;
+      endTurn();
+      return;
+    } else alert("Cannot place here!");
+    return;
+  }
+  if(piece && piece.type==='player'){
+    // Option to sacrifice
+    if(confirm("Sacrifice this piece for "+piece.cost+" souls?")){
+      souls += piece.cost;
+      board[r][c] = null;
+      updateSouls();
+      drawBoard();
+      return;
+    }
+    piece.moves = getMoves(piece,r,c);
+    piece.row=r; piece.col=c;
+    selectedPiece = {piece:piece, from:[r,c]};
+    drawBoard();
+  } else if(selectedPiece && selectedPiece.piece.moves){
+    const target = board[r][c];
+    if(selectedPiece.piece.moves.find(m=>m[0]===r && m[1]===c)){
+      if(target){
+        target.hp -= selectedPiece.piece.atk;
+        selectedPiece.piece.hp -= target.atk;
+        if(target.hp<=0) board[r][c]=null;
+        if(selectedPiece.piece.hp<=0) board[selectedPiece.from[0]][selectedPiece.from[1]]=null;
+        else board[r][c]=selectedPiece.piece;
+      } else {
+        board[r][c]=selectedPiece.piece;
+        board[selectedPiece.from[0]][selectedPiece.from[1]]=null;
+      }
+      selectedPiece=null;
+      endTurn();
+    }
+  }
+  drawBoard();
+}
+
+function updateSouls(){ document.getElementById('souls').textContent = "Souls: "+souls; }
+
+function endTurn(){
+  checkWin();
+  turn = turn==='player'?'enemy':'player';
+  drawHand();
+  updateStatus();
+  if(turn==='enemy') setTimeout(enemyTurn,500);
+}
+
+function enemyTurn(){
+  for(let r=0;r<rows;r++){
+    for(let c=0;c<cols;c++){
+      const piece = board[r][c];
+      if(piece && piece.type==='enemy'){
+        const moves = getMoves(piece,r,c);
+        for(const [nr,nc] of moves){
+          const target = board[nr][nc];
+          if(target && target.type==='player'){
+            target.hp -= piece.atk;
+            piece.hp -= target.atk;
+            if(target.hp<=0) board[nr][nc]=null;
+            if(piece.hp<=0) board[r][c]=null;
+            break;
+          } else if(!target){
+            board[nr][nc]=piece;
+            board[r][c]=null;
+            break;
+          }
+        }
+      }
+    }
+  }
+  endTurn();
+  drawBoard();
+}
+
+function checkWin(){
+  const playerKing = board.flat().find(p=>p && p.type==='player' && p.name==='King');
+  const enemyKing = board.flat().find(p=>p && p.type==='enemy' && p.name==='King');
+  if(!playerKing) { alert("You Lost!"); resetGame(); }
+  if(!enemyKing) { alert("You Won!"); resetGame(); }
+}
+
+function resetGame(){ location.reload(); }
+
+function updateStatus(){ document.getElementById('status').textContent = "Turn: "+turn; }
+
+createBoard();
+</script>
+
+</body>
+</html>
