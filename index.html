@@ -2,10 +2,10 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<title>Chess Deck-Building Battle</title>
+<title>Chess Deck-Building Battle with Bosses</title>
 <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@700&display=swap" rel="stylesheet">
 <style>
-body { background:#1e1e2f; color:#eee; font-family:'Roboto',sans-serif; display:flex; flex-direction:column; align-items:center; padding:20px; overflow:hidden;}
+body { background:#1e1e2f; color:#eee; font-family:'Roboto',sans-serif; display:flex; flex-direction:column; align-items:center; padding:20px;}
 h1 { margin-bottom:10px; }
 #board { border-collapse: collapse; box-shadow: 0 0 15px rgba(0,0,0,0.5);}
 td { width:70px; height:70px; text-align:center; vertical-align:middle; position:relative; cursor:pointer; transition:0.2s; border-radius:5px; }
@@ -14,12 +14,17 @@ td.dark { background:#b58863; }
 .piece-icon { font-size:36px; pointer-events:none; user-select:none; transition: transform 0.2s;}
 .hp-bar { position:absolute; bottom:5px; left:5px; height:8px; width:60px; background:#555; border-radius:4px; overflow:hidden; }
 .hp-fill { height:100%; width:100%; background:green; transition:width 0.3s, background 0.3s;}
+.frozen { opacity:0.4; }
 #deck,#souls { display:flex; flex-direction:column; align-items:center; margin-top:10px; }
 #cards { display:flex; gap:8px; flex-wrap:wrap; justify-content:center; }
 .card { background:linear-gradient(to bottom,#444,#222); padding:6px 12px; border-radius:8px; cursor:pointer; box-shadow:0 0 5px black; transition:0.2s; }
 .card:hover { transform:translateY(-2px); box-shadow:0 0 12px gold; }
 #souls { font-size:20px; margin-top:10px; }
 #status { margin-top:10px; font-size:18px; }
+#shop { display:none; margin-top:20px; text-align:center; }
+#shop-items { display:flex; gap:10px; justify-content:center; }
+button { padding:6px 10px; border:none; border-radius:4px; cursor:pointer; background:#666; color:white; }
+button:hover { background:#888; }
 </style>
 </head>
 <body>
@@ -35,11 +40,17 @@ td.dark { background:#b58863; }
 <div id="souls">Souls: 0</div>
 <div id="status"></div>
 
+<div id="shop">
+  <h3>Shop</h3>
+  <div id="shop-items"></div>
+  <button onclick="closeShop()">Close Shop</button>
+</div>
+
 <script>
 // --- GLOBALS ---
-const rows=8,cols=8;
-const board=[];
-let playerDeck=[
+const rows=8, cols=8;
+const board = Array.from({length:rows},()=>Array(cols).fill(null));
+let playerDeck = [
   {name:'Pawn', hp:2, atk:1, cost:0, icon:'♙'},
   {name:'Knight', hp:3, atk:2, cost:3, icon:'♘'},
   {name:'Bishop', hp:2, atk:2, cost:3, icon:'♗'},
@@ -52,10 +63,46 @@ let playerHand=[];
 let selectedPiece=null;
 let turn='player';
 let souls=0;
+let coins=10;
+let round=1;
+let currentBoss=null;
 
-// --- BOARD SETUP ---
+// --- SIGILS (for shop usage only) ---
+const sigils = [
+  {name:'Fury', emoji:'🔥', apply:(p)=>{p.atk+=1;}},
+  {name:'Shield', emoji:'🛡️', apply:(p)=>{p.hp+=1;p.maxHp+=1;}},
+  {name:'Vamp', emoji:'🩸', apply:(p)=>{p.onAttack=(t)=>{p.hp=Math.min(p.maxHp,p.hp+1);}}},
+  {name:'Pierce', emoji:'🗡️', apply:(p)=>{p.pierce=true;}},
+  {name:'Rebirth', emoji:'🌱', apply:(p)=>{p.rebirth=true;}},
+  {name:'Haste', emoji:'⚡', apply:(p)=>{p.haste=true;}},
+  {name:'Poison', emoji:'☠️', apply:(p)=>{p.poison=true;}},
+  {name:'Guardian', emoji:'🦅', apply:(p)=>{p.guardian=true;}},
+  {name:'Berserk', emoji:'😡', apply:(p)=>{p.berserk=true;}},
+  {name:'Frozen', emoji:'❄️', apply:(p)=>{p.frozen=true;}},
+  {name:'Lifesteal', emoji:'❤️', apply:(p)=>{p.lifesteal=true;}},
+  {name:'Explode', emoji:'💥', apply:(p)=>{p.explode=true;}},
+  {name:'Stealth', emoji:'👻', apply:(p)=>{p.stealth=true;}},
+  {name:'Magnet', emoji:'🧲', apply:(p)=>{p.magnet=true;}},
+  {name:'Reflect', emoji:'🔄', apply:(p)=>{p.reflect=true;}},
+];
+
+// --- DECK & HAND ---
+function drawDeck(){
+  const div=document.getElementById('cards'); div.innerHTML='';
+  playerHand.forEach((card,index)=>{
+    const c=document.createElement('div'); c.className='card';
+    c.textContent=`${card.icon} ${card.name} HP:${card.hp} ATK:${card.atk} Cost:${card.cost}`;
+    c.onclick=()=>selectCard(index);
+    div.appendChild(c);
+  });
+}
+function drawInitialHand(){while(playerHand.length<5 && playerDeck.length>0){const i=Math.floor(Math.random()*playerDeck.length); playerHand.push(playerDeck.splice(i,1)[0]);} drawDeck();}
+function drawCardAtTurnStart(){if(playerDeck.length===0) return; if(playerHand.length<5){const i=Math.floor(Math.random()*playerDeck.length); playerHand.push(playerDeck.splice(i,1)[0]); drawDeck();}}
+
+// --- BOARD ---
 function createBoard(){
   const table=document.getElementById('board');
+  table.innerHTML='';
   for(let r=0;r<rows;r++){
     const tr=document.createElement('tr');
     for(let c=0;c<cols;c++){
@@ -64,31 +111,31 @@ function createBoard(){
       td.className=(r+c)%2===0?'light':'dark';
       td.addEventListener('click',()=>cellClick(r,c));
       tr.appendChild(td);
-      board[r].push(null);
     }
     table.appendChild(tr);
   }
   setupEnemy(); drawBoard(); drawInitialHand(); updateStatus(); updateSouls();
 }
 function setupEnemy(){
+  if(round % 3 === 0) return; // Boss will spawn later
   const layout=[['Rook','Knight','Bishop','Queen','King','Bishop','Knight','Rook'],['Pawn','Pawn','Pawn','Pawn','Pawn','Pawn','Pawn','Pawn']];
   const icons={'Pawn':'♟','Knight':'♞','Bishop':'♝','Rook':'♜','Queen':'♛','King':'♚'};
   for(let r=0;r<2;r++){
-    for(let c=0;c<8;c++){
+    for(let c=0;c<cols;c++){
       const name=layout[r][c];
       board[r][c]={name,hp:name==='Pawn'?2:name==='Knight'?3:name==='Bishop'?2:name==='Rook'?4:name==='Queen'?5:6,atk:name==='Pawn'?1:name==='Knight'?2:name==='Bishop'?2:name==='Rook'?3:name==='Queen'?3:1,type:'enemy',maxHp:name==='Pawn'?2:name==='Knight'?3:name==='Bishop'?2:name==='Rook'?4:name==='Queen'?5:6,icon:icons[name]};
     }
   }
 }
 
-// --- DRAW FUNCTIONS ---
+// --- DRAW BOARD ---
 function drawBoard(){
   for(let r=0;r<rows;r++){
     for(let c=0;c<cols;c++){
       const td=document.querySelector(`td[data-row='${r}'][data-col='${c}']`);
-      const piece=board[r][c]; td.innerHTML='';
+      const piece=board[r][c]; td.innerHTML=''; td.classList.remove('frozen');
       if(piece){
-        const icon=document.createElement('div'); icon.className='piece-icon'; icon.textContent=piece.icon; td.appendChild(icon);
+        const icon=document.createElement('div'); icon.className='piece-icon'; icon.textContent=piece.icon; if(piece.frozen) icon.classList.add('frozen'); td.appendChild(icon);
         const hpBar=document.createElement('div'); hpBar.className='hp-bar';
         const fill=document.createElement('div'); fill.className='hp-fill';
         const percent=Math.max(0,(piece.hp/piece.maxHp)*100); fill.style.width=percent+'%';
@@ -98,101 +145,17 @@ function drawBoard(){
     }
   }
 }
-function drawDeck(){const div=document.getElementById('cards'); div.innerHTML=''; playerHand.forEach((card,index)=>{const c=document.createElement('div'); c.className='card'; c.textContent=`${card.icon} ${card.name} HP:${card.hp} ATK:${card.atk} Cost:${card.cost}`; c.onclick=()=>selectCard(index); div.appendChild(c);});}
-function drawInitialHand(){while(playerHand.length<5 && playerDeck.length>0){const i=Math.floor(Math.random()*playerDeck.length); playerHand.push(playerDeck.splice(i,1)[0]);} drawDeck();}
-function drawCardAtTurnStart(){if(playerDeck.length===0) return; if(playerHand.length<5){const i=Math.floor(Math.random()*playerDeck.length); playerHand.push(playerDeck.splice(i,1)[0]); drawDeck();}}
 
-// --- STATUS & SOULS ---
-function updateSouls(){document.getElementById('souls').textContent="Souls: "+souls;}
-function updateStatus(){document.getElementById('status').textContent="Turn: "+turn;}
-
-  <!-- Add this inside <body> below status -->
-<div id="shop" style="display:none; margin-top:20px; text-align:center;">
-  <h3>Shop</h3>
-  <div id="shop-items" style="display:flex; gap:10px; justify-content:center;"></div>
-  <button onclick="closeShop()">Close Shop</button>
-</div>
-
-<script>
-// --- CURRENCY ---
-let coins = 10; // Starting currency for shop
-function updateStatus(){document.getElementById('status').textContent=`Turn: ${turn} | Coins: ${coins}`;}
-
-// --- SHOP LOGIC ---
-const shopOptions=[
-  {
-    name:"Random Sigil Upgrade",
-    cost:5,
-    action:()=>{
-      const pieceTypes=['Pawn','Knight','Bishop','Rook','Queen'];
-      const type=pieceTypes[Math.floor(Math.random()*pieceTypes.length)];
-      const allPieces=[];
-      for(let r=0;r<rows;r++){
-        for(let c=0;c<cols;c++){
-          const p=board[r][c];
-          if(p && p.type==='player' && p.name===type) allPieces.push(p);
-        }
-      }
-      if(allPieces.length===0) return alert("No pieces of type "+type+" to upgrade!");
-      const piece = allPieces[Math.floor(Math.random()*allPieces.length)];
-      const availableSigils = sigils.filter(s=>!piece.sigils?.some(ps=>ps.name===s.name));
-      if(availableSigils.length===0) return alert("All sigils already applied!");
-      const newSigil = availableSigils[Math.floor(Math.random()*availableSigils.length)];
-      piece.sigils = piece.sigils||[];
-      piece.sigils.push({name:newSigil.name, emoji:newSigil.emoji});
-      if(newSigil.apply) newSigil.apply(piece);
-      drawBoard(); alert(`${newSigil.name} added to ${type}!`);
-    }
-  },
-  {
-    name:"Normal Pack",
-    cost:3,
-    action:()=>{
-      const normalPieces=[
-        {name:'Pawn', hp:2, atk:1, cost:0, icon:'♙'},
-        {name:'Knight', hp:3, atk:2, cost:3, icon:'♘'},
-        {name:'Bishop', hp:2, atk:2, cost:3, icon:'♗'},
-        {name:'Rook', hp:4, atk:3, cost:4, icon:'♖'},
-        {name:'Queen', hp:5, atk:3, cost:4, icon:'♕'}
-      ];
-      const card=normalPieces[Math.floor(Math.random()*normalPieces.length)];
-      playerDeck.push(card);
-      drawDeck(); alert(`Received ${card.name} card!`);
-    }
-  }
-];
-
-// --- OPEN SHOP ---
-function openShop(){
-  const shopDiv=document.getElementById('shop'); shopDiv.style.display='block';
-  const shopItems=document.getElementById('shop-items'); shopItems.innerHTML='';
-  shopOptions.forEach((item,index)=>{
-    const btn=document.createElement('button');
-    btn.textContent=`${item.name} (Cost: ${item.cost})`;
-    btn.onclick=()=>{
-      if(coins<item.cost) return alert("Not enough coins!");
-      coins-=item.cost;
-      item.action();
-      updateStatus();
-    };
-    shopItems.appendChild(btn);
-  });
+// --- SELECT CARD & PLACE ---
+function selectCard(index){
+  if(turn!=='player'){alert("Not your turn!"); return;}
+  const card=playerHand[index];
+  if(card.cost>souls){alert("Not enough souls!"); return;}
+  selectedPiece={cardIndex:index,piece:card};
+  alert("Click an empty square on your side (rows 4-7) to place the piece.");
 }
-
-// --- CLOSE SHOP ---
-function closeShop(){document.getElementById('shop').style.display='none';}
-
-// --- TRIGGER SHOP AFTER BATTLE ---
-function endBattle(victory=true){
-  if(victory) coins+=5; else coins+=2; // Reward coins
-  alert(victory?"Victory!":"Defeat!"); 
-  openShop();
-}
-
-
-// --- CELL CLICK ---
 function cellClick(r,c){
-  if(turn!=='player') return; 
+  if(turn!=='player') return;
   const piece=board[r][c];
   if(selectedPiece){
     if(!piece && r>=4){
@@ -206,20 +169,10 @@ function cellClick(r,c){
     if(confirm("Sacrifice this piece for "+piece.cost+" souls?")){
       souls+=piece.cost; updateSouls(); board[r][c]=null; drawBoard(); return;
     }
-    selectedPiece={piece:piece,cardIndex:null}; drawBoard();
   }
 }
 
-// --- SELECT CARD ---
-function selectCard(index){
-  if(turn!=='player'){alert("Not your turn!"); return;}
-  const card=playerHand[index];
-  if(card.cost>souls){alert("Not enough souls!"); return;}
-  selectedPiece={cardIndex:index,piece:card};
-  alert("Click an empty square on your side to place the piece.");
-}
-
-// --- ATTACK PHASE ---
+// --- ATTACKS ---
 function performPlayerAttacks(){
   for(let r=4;r<rows;r++){
     for(let c=0;c<cols;c++){
@@ -239,32 +192,61 @@ function performPlayerAttacks(){
       }
     }
   }
-  drawBoard();
 }
 
-// --- TURN MANAGEMENT ---
-function startPlayerTurn(){turn='player'; drawCardAtTurnStart(); updateStatus();}
-function endTurn(){performPlayerAttacks(); turn='enemy'; startEnemyTurn(); drawBoard();}
-function startEnemyTurn(){
-  // Basic AI: move forward if empty, attack if player piece in range
-  for(let r=0;r<2;r++){
-    for(let c=0;c<8;c++){
-      const p=board[r][c];
-      if(p && p.type==='enemy'){
-        const forward=r+1; if(forward<8){
-          if(!board[forward][c]){board[forward][c]=p; board[r][c]=null;}
-          else if(board[forward][c].type==='player'){board[forward][c].hp-=p.atk; if(board[forward][c].hp<=0) board[forward][c]=null;}
-        }
+// --- SHOP ---
+const shopOptions=[
+  {name:"Random Sigil Upgrade", cost:5, action:()=>{
+    const pieceTypes=['Pawn','Knight','Bishop','Rook','Queen'];
+    const type=pieceTypes[Math.floor(Math.random()*pieceTypes.length)];
+    const allPieces=[];
+    for(let r=0;r<rows;r++){
+      for(let c=0;c<cols;c++){
+        const p=board[r][c];
+        if(p && p.type==='player') allPieces.push(p);
       }
     }
-  }
-  turn='player'; startPlayerTurn();
+    if(allPieces.length===0) return alert("No pieces to upgrade!");
+    const piece=allPieces[Math.floor(Math.random()*allPieces.length)];
+    const availableSigils = sigils.filter(s=>!piece.sigils?.some(ps=>ps.name===s.name));
+    if(availableSigils.length===0) return alert("All sigils already applied!");
+    const newSigil = availableSigils[Math.floor(Math.random()*availableSigils.length)];
+    piece.sigils = piece.sigils||[];
+    piece.sigils.push({name:newSigil.name, emoji:newSigil.emoji});
+    if(newSigil.apply) newSigil.apply(piece);
+    drawBoard(); alert(`${newSigil.name} added!`);
+  }},
+  {name:"Normal Pack", cost:3, action:()=>{
+    const normalPieces=[
+      {name:'Pawn', hp:2, atk:1, cost:0, icon:'♙'},
+      {name:'Knight', hp:3, atk:2, cost:3, icon:'♘'},
+      {name:'Bishop', hp:2, atk:2, cost:3, icon:'♗'},
+      {name:'Rook', hp:4, atk:3, cost:4, icon:'♖'},
+      {name:'Queen', hp:5, atk:3, cost:4, icon:'♕'}
+    ];
+    const card=normalPieces[Math.floor(Math.random()*normalPieces.length)];
+    playerDeck.push(card); drawDeck(); alert(`Received ${card.name}!`);
+  }}
+];
+function openShop(){
+  const shopDiv=document.getElementById('shop'); shopDiv.style.display='block';
+  const shopItems=document.getElementById('shop-items'); shopItems.innerHTML='';
+  shopOptions.forEach(item=>{
+    const btn=document.createElement('button');
+    btn.textContent=`${item.name} (Cost: ${item.cost})`;
+    btn.onclick=()=>{
+      if(coins<item.cost) return alert("Not enough coins!");
+      coins-=item.cost; item.action(); updateStatus();
+    };
+    shopItems.appendChild(btn);
+  });
 }
+function closeShop(){document.getElementById('shop').style.display='none';}
 
-// --- INIT ---
-for(let i=0;i<rows;i++) board.push([]);
-createBoard();
-</script>
-
-</body>
-</html>
+// --- BOSS ---
+const bosses = [
+  {
+    name: "Giant King",
+    pieces: [
+      {name:'King', hp:15, atk:4, type:'enemy', icon:'♚'},
+      {name:'Rook', hp:6, atk
