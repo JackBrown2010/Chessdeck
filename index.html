@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<title>Chess Deck-Building Battle - Animated</title>
+<title>Chess Deck-Building Battle</title>
 <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@700&display=swap" rel="stylesheet">
 <style>
 body { background: #1e1e2f; color: #eee; font-family: 'Roboto', sans-serif; display:flex; flex-direction:column; align-items:center; padding:20px; overflow:hidden; }
@@ -41,18 +41,23 @@ td.hover { box-shadow: inset 0 0 0 3px yellow; }
 <script>
 const rows=8,cols=8;
 const board=[];
+
 let playerDeck=[
-  {name:'Pawn', hp:2, atk:1, cost:1, icon:'♙'},
+  {name:'Pawn', hp:2, atk:1, cost:0, icon:'♙'},
   {name:'Knight', hp:3, atk:2, cost:3, icon:'♘'},
   {name:'Bishop', hp:2, atk:2, cost:3, icon:'♗'},
-  {name:'Rook', hp:4, atk:3, cost:5, icon:'♖'},
-  {name:'Queen', hp:5, atk:3, cost:7, icon:'♕'}
+  {name:'Rook', hp:4, atk:3, cost:4, icon:'♖'},
+  {name:'Queen', hp:5, atk:3, cost:4, icon:'♕'},
+  {name:'Pawn', hp:2, atk:1, cost:0, icon:'♙'},
+  {name:'Pawn', hp:2, atk:1, cost:0, icon:'♙'}
 ];
+
 let playerHand=[];
 let selectedPiece=null;
 let turn='player';
 let souls=0;
 
+// ----- BOARD SETUP -----
 function createBoard(){
   const table=document.getElementById('board');
   for(let r=0;r<rows;r++){
@@ -70,9 +75,10 @@ function createBoard(){
     table.appendChild(tr);
     board.push(row);
   }
-  setupEnemy(); drawBoard(); drawDeck(); drawHand(); updateStatus(); updateSouls();
+  setupEnemy(); drawBoard(); drawInitialHand(); updateStatus(); updateSouls();
 }
 
+// ----- ENEMY SETUP -----
 function setupEnemy(){
   const layout=[['Rook','Knight','Bishop','Queen','King','Bishop','Knight','Rook'],['Pawn','Pawn','Pawn','Pawn','Pawn','Pawn','Pawn','Pawn']];
   const icons={'Pawn':'♟','Knight':'♞','Bishop':'♝','Rook':'♜','Queen':'♛','King':'♚'};
@@ -84,6 +90,7 @@ function setupEnemy(){
   }
 }
 
+// ----- DRAW BOARD -----
 function drawBoard(){
   for(let r=0;r<rows;r++){
     for(let c=0;c<cols;c++){
@@ -104,25 +111,90 @@ function drawBoard(){
   }
 }
 
+// ----- DECK & HAND -----
 function drawDeck(){const div=document.getElementById('cards'); div.innerHTML='';
-playerHand.forEach((card,index)=>{const c=document.createElement('div'); c.className='card'; c.textContent=`${card.icon} ${card.name} HP:${card.hp} ATK:${card.atk} Cost:${card.cost}`; c.onclick=()=>selectCard(index); div.appendChild(c); });}
+playerHand.forEach((card,index)=>{const c=document.createElement('div'); c.className='card'; c.textContent=`${card.icon} ${card.name} HP:${card.hp} ATK:${card.atk} Cost:${card.cost}`; c.onclick=()=>selectCard(index); div.appendChild(c);});}
+function drawInitialHand(){while(playerHand.length<5 && playerDeck.length>0){const i=Math.floor(Math.random()*playerDeck.length); playerHand.push(playerDeck.splice(i,1)[0]);} drawDeck();}
+function drawCardAtTurnStart(){if(playerDeck.length===0) return; if(playerHand.length<5){const i=Math.floor(Math.random()*playerDeck.length); playerHand.push(playerDeck.splice(i,1)[0]); drawDeck();}}
 
-function drawHand(){while(playerHand.length<3 && playerDeck.length>0){playerHand.push({...playerDeck[Math.floor(Math.random()*playerDeck.length)]});} drawDeck();}
-
-function selectCard(index){if(turn!=='player'){alert("Not your turn!"); return;} const card=playerHand[index]; if(card.cost>souls){alert("Not enough souls!"); return;} selectedPiece={cardIndex:index,piece:card}; alert("Click an empty square on your side to place the piece.");}
-
+// ----- CELL CLICK -----
 function cellClick(r,c){
-  if(turn!=='player') return; const piece=board[r][c];
-  if(selectedPiece){ if(!piece && r>=4){board[r][c]={...selectedPiece.piece,type:'player',maxHp:selectedPiece.piece.hp}; souls-=selectedPiece.piece.cost; updateSouls(); playerHand.splice(selectedPiece.cardIndex,1); selectedPiece=null; endTurn(); drawBoard(); return;} else alert("Cannot place here!"); return;}
-  if(piece && piece.type==='player'){if(confirm("Sacrifice this piece for "+piece.cost+" souls?")){souls+=piece.cost; updateSouls(); spawnParticles(r,c); board[r][c]=null; drawBoard(); return;} piece.moves=[]; selectedPiece={piece:piece,from:[r,c]}; drawBoard();}
+  if(turn!=='player') return; 
+  const piece=board[r][c];
+
+  if(selectedPiece){
+    if(!piece && r>=4){
+      board[r][c]={...selectedPiece.piece,type:'player',maxHp:selectedPiece.piece.hp};
+      souls-=selectedPiece.piece.cost; updateSouls();
+      playerHand.splice(selectedPiece.cardIndex,1); selectedPiece=null;
+      endTurn(); drawBoard(); return;
+    } else alert("Cannot place here!"); return;
+  }
+
+  if(piece && piece.type==='player'){
+    if(confirm("Sacrifice this piece for "+piece.cost+" souls?")){
+      souls+=piece.cost; updateSouls(); spawnParticles(r,c); board[r][c]=null; drawBoard(); return;
+    }
+    piece.moves=[]; selectedPiece={piece:piece,from:[r,c]}; drawBoard();
+  }
 }
 
-function spawnParticles(r,c){const td=document.querySelector(`td[data-row='${r}'][data-col='${c}']`); for(let i=0;i<10;i++){const p=document.createElement('div'); p.className='particle'; const dx=(Math.random()-0.5)*50+'px'; const dy=(Math.random()-0.5)*50+'px'; p.style.setProperty('--dx',dx); p.style.setProperty('--dy',dy); td.appendChild(p); setTimeout(()=>p.remove(),500);}}
+// ----- SELECT CARD -----
+function selectCard(index){
+  if(turn!=='player'){alert("Not your turn!"); return;}
+  const card=playerHand[index];
+  if(card.cost>souls){alert("Not enough souls!"); return;}
+  selectedPiece={cardIndex:index,piece:card};
+  alert("Click an empty square on your side to place the piece.");
+}
 
+// ----- PARTICLES -----
+function spawnParticles(r,c){const td=document.querySelector(`td[data-row='${r}'][data-col='${c}']`);
+for(let i=0;i<10;i++){const p=document.createElement('div'); p.className='particle';
+const dx=(Math.random()-0.5)*50+'px'; const dy=(Math.random()-0.5)*50+'px';
+p.style.setProperty('--dx',dx); p.style.setProperty('--dy',dy); td.appendChild(p);
+setTimeout(()=>p.remove(),500);}}
+
+// ----- SOULS & STATUS -----
 function updateSouls(){document.getElementById('souls').textContent="Souls: "+souls;}
 function updateStatus(){document.getElementById('status').textContent="Turn: "+turn;}
-function endTurn(){turn=turn==='player'?'enemy':'player'; drawHand(); updateStatus();}
 
+// ----- ATTACKS -----
+function performPlayerAttacks(){
+  for(let r=4;r<rows;r++){
+    for(let c=0;c<cols;c++){
+      const piece=board[r][c];
+      if(piece && piece.type==='player'){
+        // Attack all adjacent squares (can be extended to piece-specific moves)
+        const dirs=[[-1,0],[1,0],[0,-1],[0,1],[-1,-1],[-1,1],[1,-1],[1,1]];
+        dirs.forEach(d=>{
+          const nr=r+d[0], nc=c+d[1];
+          if(nr>=0 && nr<rows && nc>=0 && nc<cols){
+            const target=board[nr][nc];
+            if(target && target.type==='enemy'){
+              target.hp-=piece.atk;
+              spawnParticles(nr,nc);
+              if(target.hp<=0){
+                souls+=Math.min(target.atk,4); // max soul cost logic
+                board[nr][nc]=null;
+              }
+            }
+          }
+        });
+      }
+    }
+  }
+  updateSouls(); drawBoard();
+}
+
+// ----- TURN MANAGEMENT -----
+function startPlayerTurn(){turn='player'; drawCardAtTurnStart(); updateStatus(); drawHand();}
+function endTurn(){performPlayerAttacks(); turn='enemy'; startEnemyTurn(); drawBoard();}
+function startEnemyTurn(){
+  setTimeout(()=>{turn='player'; startPlayerTurn();},500);
+}
+
+// ----- INIT -----
 createBoard();
 </script>
 
