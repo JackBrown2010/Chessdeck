@@ -249,4 +249,76 @@ const bosses = [
     name: "Giant King",
     pieces: [
       {name:'King', hp:15, atk:4, type:'enemy', icon:'♚'},
-      {name:'Rook', hp:6, atk
+      {name:'Rook', hp:6, atk:3, type:'enemy', icon:'♜'},
+      {name:'Bishop', hp:5, atk:2, type:'enemy', icon:'♝'},
+    ],
+    effect: function() {
+      for(let r=0;r<rows;r++){
+        for(let c=0;c<cols;c++){
+          const p=board[r][c]; if(p && p.type==='enemy') p.hp=Math.min(p.maxHp,p.hp+1);
+        }
+      }
+    }
+  },
+  {
+    name: "Freezing Queen",
+    pieces: [
+      {name:'Queen', hp:10, atk:3, type:'enemy', icon:'♛'},
+      {name:'Pawn', hp:2, atk:1, type:'enemy', icon:'♟'},
+      {name:'Pawn', hp:2, atk:1, type:'enemy', icon:'♟'},
+    ],
+    effect: function() {
+      const players=[];
+      for(let r=0;r<rows;r++){
+        for(let c=0;c<cols;c++){
+          const p=board[r][c]; if(p && p.type==='player') players.push(p);
+        }
+      }
+      if(players.length>0){ const target=players[Math.floor(Math.random()*players.length)]; target.frozen=true; }
+    }
+  }
+];
+function setupBoss(){
+  currentBoss = bosses[Math.floor(Math.random()*bosses.length)];
+  alert(`Boss Battle! ${currentBoss.name} appears!`);
+  for(let r=0;r<2;r++){for(let c=0;c<cols;c++){board[r][c]=null;}}
+  let cIndex=0;
+  currentBoss.pieces.forEach(p=>{board[0][cIndex]={...p,maxHp:p.hp}; cIndex++;});
+  drawBoard();
+}
+
+// --- TURNS ---
+function startPlayerTurn(){turn='player'; drawCardAtTurnStart(); updateStatus();}
+function endTurn(){performPlayerAttacks(); turn='enemy'; startEnemyTurn();}
+function startEnemyTurn(){
+  if(round%3===0 && !currentBoss) setupBoss();
+  if(currentBoss) currentBoss.effect();
+  for(let r=0;r<rows;r++){
+    for(let c=0;c<cols;c++){
+      const p=board[r][c];
+      if(p && p.type==='enemy'){if(p.frozen){p.frozen=false; continue;}
+        const forward=r+1;if(forward<rows){if(!board[forward][c]){board[forward][c]=p; board[r][c]=null;}
+        else if(board[forward][c].type==='player'){board[forward][c].hp-=p.atk; if(board[forward][c].hp<=0) board[forward][c]=null;}}}}
+  }
+  // Check if all enemy pieces dead
+  let enemyAlive=false; for(let r=0;r<rows;r++){for(let c=0;c<cols;c++){const p=board[r][c]; if(p && p.type==='enemy') enemyAlive=true;}}
+  if(!enemyAlive){currentBoss=null; endBattle(true);} else{round++; turn='player'; startPlayerTurn();}
+}
+
+// --- END BATTLE & SHOP ---
+function endBattle(victory=true){
+  coins += victory?5:2;
+  alert(victory?"Victory!":"Defeat!");
+  openShop();
+}
+
+// --- SOULS & STATUS ---
+function updateSouls(){document.getElementById('souls').textContent="Souls: "+souls;}
+function updateStatus(){document.getElementById('status').textContent=`Turn: ${turn} | Coins: ${coins} | Round: ${round}`;}
+
+// --- INIT ---
+createBoard();
+</script>
+
+</body>
+</html>
